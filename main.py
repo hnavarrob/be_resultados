@@ -7,6 +7,7 @@ from waitress import serve
 #Configuración del proyecto
 app=Flask(__name__)
 cors = CORS(app)
+
 def loadFileConfig():
     with open('config.json') as f:
         data = json.load(f)
