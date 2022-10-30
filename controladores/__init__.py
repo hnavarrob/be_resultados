@@ -1,0 +1,1 @@
+from .ControladorCandidato import ControladorCandidato
