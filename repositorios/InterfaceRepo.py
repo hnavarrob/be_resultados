@@ -1,5 +1,6 @@
 # ORM para la base de datos en mongo 
 
+from sqlite3 import Cursor
 import pymongo
 import certifi
 from bson import DBRef
@@ -10,6 +11,7 @@ import json
 T = TypeVar('T')
 
 class InterfaceRepo(Generic[T]):
+
     def __init__(self):
         ca = certifi.where()
         dataConfig = self.loadFileConfig()
@@ -17,16 +19,36 @@ class InterfaceRepo(Generic[T]):
         self.baseDatos = client[dataConfig["name-db"]]
         theClass = get_args(self.__orig_bases__[0])
         self.coleccion = theClass[0].__name__.lower()
+        if dataConfig["test"]== "true":
+            self.__test_dbConnection()
 
     def loadFileConfig(self):
         with open('config.json') as f:
             data = json.load(f)
+        with open('secrets.json') as f:
+            data.update(json.load(f))
         return data
 
+    def __test_dbConnection(self):
+        colecciones =self.baseDatos.list_collection_names()
+        print(colecciones)
+        #Explorando las colecciones
+        for c in colecciones:
+            print("Colección:" , c)
+            print("   Campos:" , end="")
+            cursor = self.baseDatos[c].find({})
+            #for document in cursor
+            try:
+                #print("  ", end="")
+                print(cursor[0].Keys()) #print all fields
+            except:
+                print("Coleccion vacía")
+            print("")
+            
     def save(self, item: T):
         laColeccion = self.baseDatos[self.coleccion]
         elId = ""
-        item = self.transformRefs(item)
+        item = self.__transformRefs(item)
         if hasattr(item, "_id") and item._id != "":
             elId = item._id
             _id = ObjectId(elId)
@@ -59,7 +81,7 @@ class InterfaceRepo(Generic[T]):
     def findById(self, id):
         laColeccion = self.baseDatos[self.coleccion]
         x = laColeccion.find_one({"_id": ObjectId(id)})
-        x = self.getValuesDBRef(x)
+        x = self.__getValuesDBRef(x)
         if x == None:
             x = {}
         else:
@@ -71,32 +93,32 @@ class InterfaceRepo(Generic[T]):
         data = []
         for x in laColeccion.find():
             x["_id"] = x["_id"].__str__()
-            x = self.transformObjectIds(x)
-            x = self.getValuesDBRef(x)
+            x = self.__transformObjectIds(x)
+            x = self.__getValuesDBRef(x)
             data.append(x)
         return data
 
-    def query(self, theQuery):
+    def __query(self, theQuery):
         laColeccion = self.baseDatos[self.coleccion]
         data = []
         for x in laColeccion.find(theQuery):
             x["_id"] = x["_id"].__str__()
-            x = self.transformObjectIds(x)
-            x = self.getValuesDBRef(x)
+            x = self.__transformObjectIds(x)
+            x = self.__getValuesDBRef(x)
             data.append(x)
         return data
 
-    def queryAggregation(self, theQuery):
+    def __queryAggregation(self, theQuery):
         laColeccion = self.baseDatos[self.coleccion]
         data = []
         for x in laColeccion.aggregate(theQuery):
             x["_id"] = x["_id"].__str__()
-            x = self.transformObjectIds(x)
-            x = self.getValuesDBRef(x)
+            x = self.__transformObjectIds(x)
+            x = self.__getValuesDBRef(x)
             data.append(x)
         return data
 
-    def getValuesDBRef(self, x):
+    def __getValuesDBRef(self, x):
         keys = x.keys()
         for k in keys:
             if isinstance(x[k], DBRef):
@@ -104,14 +126,14 @@ class InterfaceRepo(Generic[T]):
                 valor = laColeccion.find_one({"_id": ObjectId(x[k].id)})
                 valor["_id"] = valor["_id"].__str__()
                 x[k] = valor
-                x[k] = self.getValuesDBRef(x[k])
+                x[k] = self.__getValuesDBRef(x[k])
             elif isinstance(x[k], list) and len(x[k]) > 0:
-                x[k] = self.getValuesDBRefFromList(x[k])
+                x[k] = self.__getValuesDBRefFromList(x[k])
             elif isinstance(x[k], dict) :
-                x[k] = self.getValuesDBRef(x[k])
+                x[k] = self.__getValuesDBRef(x[k])
         return x
 
-    def getValuesDBRefFromList(self, theList):
+    def __getValuesDBRefFromList(self, theList):
         newList = []
         laColeccion = self.baseDatos[theList[0]._id.collection]
         for item in theList:
@@ -120,16 +142,16 @@ class InterfaceRepo(Generic[T]):
             newList.append(value)
         return newList
 
-    def transformObjectIds(self, x):
+    def __transformObjectIds(self, x):
         for attribute in x.keys():
             if isinstance(x[attribute], ObjectId):
                 x[attribute] = x[attribute].__str__()
             elif isinstance(x[attribute], list):
-                x[attribute] = self.formatList(x[attribute])
+                x[attribute] = self.__formatList(x[attribute])
             elif isinstance(x[attribute], dict):
-                x[attribute]=self.transformObjectIds(x[attribute])
+                x[attribute]=self.__transformObjectIds(x[attribute])
         return x
-    def formatList(self, x):
+    def __formatList(self, x):
         newList = []
         for item in x:
          if isinstance(item, ObjectId):
@@ -138,14 +160,14 @@ class InterfaceRepo(Generic[T]):
             newList = x
         return newList
 
-    def transformRefs(self, item):
+    def __transformRefs(self, item):
         theDict = item.__dict__
         keys = list(theDict.keys())
         for k in keys:
             if theDict[k].__str__().count("object") == 1:
-                newObject = self.ObjectToDBRef(getattr(item, k))
+                newObject = self.__ObjectToDBRef(getattr(item, k))
                 setattr(item, k, newObject)
         return item
-    def ObjectToDBRef(self, item: T):
+    def __ObjectToDBRef(self, item: T):
         nameCollection = item.__class__.__name__.lower()
         return DBRef(nameCollection, ObjectId(item._id))
